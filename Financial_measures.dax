@@ -1,0 +1,388 @@
+// =========================================================
+// Enterprise Financial Suite & Advanced DAX Analytics
+// Full DAX measure library — extracted directly from Financial_.pbix
+// 47 measures across 1 tables
+// Author: Mohamed Sabri Al-Deip
+// =========================================================
+
+
+// ---------------------------------------------------------
+// TABLE: _MeasuresTable  (47 measures)
+// ---------------------------------------------------------
+
+EBITDA =
+VAR _Rev = [Total Revenue]
+VAR _COGS = CALCULATE ( ABS ( SUM ( Fact_GL_Actual[Amount] ) ), Fact_GL_Actual[AccountID] IN { 2, 3 } )
+VAR _OpEx = CALCULATE ( ABS ( SUM ( Fact_GL_Actual[Amount] ) ), Fact_GL_Actual[AccountID] IN { 4, 5, 12 } )
+RETURN
+    -- هنا نقوم بطرح التكاليف والمصاريف ليعطي صافي الأرباح التشغيلية الفعلي والأقل من الإيرادات
+    _Rev - _COGS - _OpEx
+
+EBITDA Margin % =
+DIVIDE ( [EBITDA], [Total Revenue] )
+
+Gross Margin % =
+VAR _Rev = [Total Revenue]
+VAR _COGS = 
+    CALCULATE ( 
+        ABS ( SUM ( Fact_GL_Actual[Amount] ) ), 
+        Fact_GL_Actual[AccountID] IN { 2, 3 },
+        ALL( Dim_Account ),
+        ALL( Dim_Department )
+    )
+VAR _GrossProfit = ABS( _Rev - _COGS )
+RETURN 
+    IF (
+        ISBLANK ( _Rev ) || _Rev = 0,
+        BLANK(),
+        DIVIDE ( _GrossProfit, _Rev, 0 )
+    )
+
+Gross Profit =
+[Total Revenue] - [Total COGS]
+
+Net Income =
+[EBITDA] + [Other Income/Expense]
+
+Net Margin % =
+DIVIDE ( [EBITDA], [Total Revenue], 0 )
+
+Other Income/Expense =
+CALCULATE ( SUM ( Fact_GL_Actual[Amount] ), Dim_Account[AccountType] = "Other" )
+
+Total COGS =
+CALCULATE (
+    ABS ( SUM ( Fact_GL_Actual[Amount] ) ),
+    Fact_GL_Actual[AccountID] IN { 2, 3 } -- حسابات التكاليف المباشرة
+)
+
+Total OpEx =
+CALCULATE (
+    ABS ( SUM ( Fact_GL_Actual[Amount] ) ),
+    Dim_Account[AccountCategory] IN { "Finance", "General & Administrative", "Personnel", "Research & Development", "Sales & Marketing" },
+    -- السحر هنا: هذا السطر يجبر الجداول على الارتتباط برمجياً بالـ AccountID فوراً
+    TREATAS ( VALUES ( Dim_Account[AccountID] ), Fact_GL_Actual[AccountID] )
+)
+
+Total Revenue =
+CALCULATE (
+    ABS ( SUM ( Fact_GL_Actual[Amount] ) ),
+    Fact_GL_Actual[AccountID] IN { 1, 10 },
+   
+    ALL ( Dim_Department ) 
+)
+
+Revenue PY =
+VAR _SelectedYears = VALUES ( 'Dim_Date'[MonthStart] )
+RETURN
+    CALCULATE (
+        [Total Revenue],
+        ALL ( 'Dim_Date' ),
+        TREATAS ( 
+            SAMEPERIODLASTYEAR ( _SelectedYears ), 
+            'Dim_Date'[MonthStart] 
+        )
+    )
+
+Revenue YoY % =
+VAR _CurrentRevenue = [Total Revenue]
+VAR _PastRevenue = [Revenue PY]
+RETURN
+    IF (
+        ISBLANK ( _CurrentRevenue ) || ISBLANK ( _PastRevenue ),
+        BLANK (),
+        DIVIDE ( 
+            _CurrentRevenue - _PastRevenue, 
+            _PastRevenue, 
+            0 
+        )
+    )
+
+Revenue MoM =
+CALCULATE ( [Total Revenue], DATEADD ( Dim_Date_Daily[Date], -1, MONTH ) )
+
+Revenue MoM % =
+DIVIDE ( [Total Revenue] - [Revenue MoM], [Revenue MoM] )
+
+Revenue YTD =
+TOTALYTD ( [Total Revenue], Dim_Date_Daily[Date] )
+
+EBITDA PY =
+CALCULATE ( [EBITDA], SAMEPERIODLASTYEAR ( Dim_Date_Daily[Date] ) )
+
+EBITDA YoY % =
+DIVIDE ( [EBITDA] - [EBITDA PY], [EBITDA PY] )
+
+Total Budget =
+SUM ( Fact_Budget[BudgetAmount] )
+
+Budget Variance =
+VAR _Actual = [Total Actual]
+VAR _Budget = [Total Budget]
+-- فحص إذا كان الحساب الحالي حساب مصروفات (مثلاً يبدأ بـ 4 أو 5)
+VAR _IsExpense = 
+    LEFT ( SELECTEDVALUE ( Fact_GL_Actual[AccountID] ), 1 ) IN { "4", "5" }
+
+RETURN
+    IF (
+        _IsExpense,
+        _Budget - _Actual,  -- للمصروفات: إذا كان الميزاني أكبر من الفعلي فهو إيجابي
+        _Actual - _Budget   -- للإيرادات: إذا كان الفعلي أكبر من الميزاني فهو إيجابي
+    )
+
+Variance  % =
+VAR _Actual = [Actual]
+VAR _Budget = [Total Budget]
+RETURN
+    IF (
+        ISBLANK ( _Budget ) || _Budget = 0,
+        BLANK (),
+        DIVIDE ( _Actual - _Budget, _Budget, 0 )
+    )
+
+Net Cash =
+VAR _CurrentLineItem = SELECTEDVALUE ( Fact_CashFlow[LineItem] )
+VAR _CurrentCategory = SELECTEDVALUE ( Fact_CashFlow[CashFlowCategory] )
+RETURN
+    IF (
+        -- أولاً: إذا كان العنصر المعروض في المرئيات هو فئة كبرى (لإصلاح الشارتات على اليسار)
+        ISINSCOPE ( Fact_CashFlow[CashFlowCategory] ) && ISBLANK ( _CurrentLineItem ),
+        SWITCH (
+            _CurrentCategory,
+            "Operating Activities", CALCULATE ( SUM ( Fact_GL_Actual[Amount] ), Fact_GL_Actual[AccountID] IN { 1, 2, 3, 4, 5, 10, 12 } ),
+            "Investing Activities", CALCULATE ( SUM ( Fact_GL_Actual[Amount] ), Fact_GL_Actual[AccountID] = 15 ) * -1,
+            "Financing Activities", CALCULATE ( SUM ( Fact_GL_Actual[Amount] ), Fact_GL_Actual[AccountID] IN { 13, 14 } ),
+            SUM ( Fact_GL_Actual[Amount] )
+        ),
+        -- ثانياً: إذا كان العنصر المعروض هو بند تفصيلي (للحفاظ على انضباط الجدول بالأسفل)
+        SWITCH (
+            _CurrentLineItem,
+            "Cash from Customer Collections", CALCULATE ( ABS ( SUM ( Fact_GL_Actual[Amount] ) ), Fact_GL_Actual[AccountID] IN { 1, 10 } ),
+            "Cash Paid for Salaries",         CALCULATE ( ABS ( SUM ( Fact_GL_Actual[Amount] ) ), Fact_GL_Actual[AccountID] = 5 ) * -1,
+            "Cash Paid for Taxes",            CALCULATE ( ABS ( SUM ( Fact_GL_Actual[Amount] ) ), Fact_GL_Actual[AccountID] = 4 ) * -1,
+            "Cash Paid to Suppliers",         CALCULATE ( ABS ( SUM ( Fact_GL_Actual[Amount] ) ), Fact_GL_Actual[AccountID] IN { 2, 3, 12 } ) * -1,
+            "Loan Proceeds",                  CALCULATE ( ABS ( SUM ( Fact_GL_Actual[Amount] ) ), Fact_GL_Actual[AccountID] = 13 ),
+            "Loan Repayment",                 CALCULATE ( ABS ( SUM ( Fact_GL_Actual[Amount] ) ), Fact_GL_Actual[AccountID] = 14 ) * -1,
+            "Capitalized Software Development", CALCULATE ( ABS ( SUM ( Fact_GL_Actual[Amount] ) ), Fact_GL_Actual[AccountID] = 15 ) * -1,
+            SUM ( Fact_GL_Actual[Amount] )
+        )
+    )
+
+Operating Cash =
+CALCULATE (
+    ABS ( SUM ( Fact_GL_Actual[Amount] ) ),
+    Fact_GL_Actual[AccountID] IN { 1, 2, 3, 10 }
+)
+
+Investing Cash Flow =
+CALCULATE ( SUM ( Fact_CashFlow[Amount] ), Fact_CashFlow[CashFlowCategory] = "Investing Activities" )
+
+Financing Cash Flow =
+CALCULATE ( SUM ( Fact_CashFlow[Amount] ), Fact_CashFlow[CashFlowCategory] = "Financing Activities" )
+
+Ending Cash =
+CALCULATE (
+    SUM ( Fact_GL_Actual[Amount] ),
+    FILTER (
+        ALL ( 'Dim_Date' ),
+        'Dim_Date'[MonthStart] <= MAX ( 'Dim_Date'[MonthStart] )
+    )
+)
+
+Avg Monthly Burn =
+VAR MonthsWithOutflow =
+    CALCULATE ( DISTINCTCOUNT ( Fact_CashFlow[DateKey] ), Fact_CashFlow[Amount] < 0 )
+RETURN
+    DIVIDE (
+        CALCULATE ( SUM ( Fact_CashFlow[Amount] ), Fact_CashFlow[Amount] < 0 ),
+        MonthsWithOutflow
+    )
+
+Runway (Months) =
+VAR _CurrentCash = [Ending Cash]
+VAR _MonthlyBurnRate = 
+    CALCULATE ( 
+        ABS ( SUM ( Fact_CashFlow[Amount] ) ), 
+        Fact_CashFlow[Amount] < 0, 
+        ALL ( 'Dim_Date' ) 
+    ) / 12
+RETURN
+    IF (
+        _MonthlyBurnRate = 0 || _CurrentCash <= 0,
+        0, -- إذا كان الكاش سالباً أو الصرف صفراً يعود بصفر
+        DIVIDE ( _CurrentCash, _MonthlyBurnRate, 0 )
+    )
+
+Total AR =
+CALCULATE ( SUM ( Fact_AR_Invoices[InvoiceAmount] ), Fact_AR_Invoices[Status] = "Open" )
+
+Total Invoiced =
+SUM ( Fact_AR_Invoices[InvoiceAmount] )
+
+Invoice Count =
+COUNTROWS ( Fact_AR_Invoices )
+
+Open Invoices =
+CALCULATE ( COUNTROWS ( Fact_AR_Invoices ), Fact_AR_Invoices[Status] = "Open" )
+
+DSO (Days) =
+VAR _SelectedCustomers = VALUES ( Dim_Customer[CustomerID] )
+VAR _DSOValue = 
+    CALCULATE (
+        AVERAGEX (
+            FILTER ( Fact_AR_Invoices, Fact_AR_Invoices[Status] = "Paid" ),
+            DATEDIFF ( Fact_AR_Invoices[InvoiceDate], Fact_AR_Invoices[PaidDate], DAY )
+        ),
+        -- إجبار البرنامج على ربط الفواتير المسددة بشرائح العملاء برمجياً فوراً
+        TREATAS ( _SelectedCustomers, Fact_AR_Invoices[CustomerID] )
+    )
+RETURN
+    -- شرط ذكي: إذا كانت الشريحة فارغة أو القيمة صفراً يخفي العمود تماماً من الشارت
+    IF ( ISBLANK ( _DSOValue ) || _DSOValue = 0, BLANK (), _DSOValue )
+
+Days Overdue =
+VAR RefDate = TODAY ()
+RETURN
+    IF (
+        HASONEVALUE ( Fact_AR_Invoices[InvoiceID] ),
+        DATEDIFF ( SELECTEDVALUE ( Fact_AR_Invoices[DueDate] ), RefDate, DAY )
+    )
+
+AR Aging Bucket =
+VAR d = [Days Overdue]
+RETURN
+    SWITCH (
+        TRUE (),
+        ISBLANK ( d ), "N/A",
+        d <= 0, "Current",
+        d <= 30, "1-30 Days",
+        d <= 60, "31-60 Days",
+        d <= 90, "61-90 Days",
+        "90+ Days"
+    )
+
+Revenue YoY Arrow =
+IF ( [Revenue YoY %] >= 0, "▲", "▼" )
+
+Revenue KPI Color =
+IF ( [Revenue YoY %] >= 0, "#3E8E5A", "#B33951" )
+
+Budget Status Color =
+SWITCH (
+    [Budget Variance Status],
+    "Over Budget", "#B33951",
+    "Under Budget", "#3E8E5A",
+    "#D4A62A"
+)
+
+Total Actual =
+SUM ( Fact_GL_Actual[Amount] )
+
+Budget Variance Status =
+VAR v = [Variance  %]
+RETURN
+    SWITCH (
+        TRUE (),
+        ISBLANK ( [Total Budget] ) && ISBLANK ( [Total Actual] ), BLANK(),
+        ISBLANK ( [Total Budget] ), "No Budget",
+        v < -0.05, "Over Budget (Bad)",   -- المصروفات الزائدة أو نقص الإيرادات سيعطي سالب
+        v > 0.05, "Under Budget (Good)",  -- توفير المصروفات أو زيادة الإيرادات سيعطي موجب
+        "On Track"
+    )
+
+Total Net Amount =
+SUMX (
+    Fact_GL_Actual,
+    SWITCH (
+        TRUE (),
+        Fact_GL_Actual[AccountID] IN { 1, 10 }, ABS ( Fact_GL_Actual[Amount] ),        
+        Fact_GL_Actual[AccountID] IN { 2, 3, 4, 5 }, ABS ( Fact_GL_Actual[Amount] ) * 
+        Fact_GL_Actual[Amount]  
+    )
+)
+
+P&L Waterfall Measure =
+VAR _CurrentStep = SELECTEDVALUE ( 'P&L_Structure'[P&L Step] )
+VAR _Rev = [Total Revenue]
+VAR _COGS = CALCULATE ( ABS ( SUM ( Fact_GL_Actual[Amount] ) ), Fact_GL_Actual[AccountID] IN { 2, 3 } )
+VAR _OpEx = CALCULATE ( ABS ( SUM ( Fact_GL_Actual[Amount] ) ), Fact_GL_Actual[AccountID] IN { 4, 5, 12 } )
+RETURN
+    SWITCH (
+        _CurrentStep,
+        "Total Revenue", _Rev,
+        "Total COGS",    _COGS * -1,
+        -- السحر هنا: نجعل مجمل الربح يظهر كصفر تجميعي مؤقت ليعتدل الشلال برمجياً
+        "Gross Profit",  0, 
+        "Total OpEx",    _OpEx * -1,
+        "EBITDA",        0,
+        BLANK()
+    )
+
+Actual =
+ABS ( SUM ( Fact_GL_Actual[Amount] ) )
+
+Over Budget =
+COUNTROWS (
+    FILTER (
+        VALUES ( Fact_Budget[AccountID] ),
+        [Actual] > [Total Budget]
+    )
+)
+
+Budget Variance % =
+VAR _SelectedAccounts = VALUES ( Dim_Account[AccountID] )
+VAR _ActVal = 
+    CALCULATE (
+        ABS ( [Actual] ), -- نأخذ القيمة الموجبة المجردة للمقارنة
+        TREATAS ( _SelectedAccounts, Fact_GL_Actual[AccountID] )
+    )
+VAR _BudVal = 
+    CALCULATE (
+        [Total Budget],
+        TREATAS ( _SelectedAccounts, Fact_Budget[AccountID] )
+    )
+RETURN
+    IF (
+        ISBLANK ( _BudVal ) || _BudVal = 0,
+        BLANK (),
+        -- إذا كان الصرف الفعلي أكبر من الموازنة فهذا انحراف موجب (تخطي)
+        DIVIDE ( _ActVal - _BudVal, _BudVal, 0 )
+    )
+
+Paid Late % =
+VAR _LatePaidCount = 
+    CALCULATE (
+        COUNT(Fact_GL_Actual[Amount]),
+        -- نفترض وجود عمود في داتا الفواتير يحدد حالة السداد المتأخر أو أيام التأخير
+        -- يمكنك تعديل الشرط بالأسفل ليطابق اسم العمود بجدولك (مثال: DaysOverdue > 0)
+        Fact_GL_Actual[AccountID] = 7 
+    )
+VAR _TotalPaidCount = 
+    CALCULATE (
+        COUNT(Fact_GL_Actual[Amount]),
+        Fact_GL_Actual[AccountID] IN { 7, 8 } -- إجمالي فواتير العملاء
+    )
+RETURN
+    IF (
+        _TotalPaidCount = 0,
+        0,
+        DIVIDE ( _LatePaidCount, _TotalPaidCount, 0 )
+    )
+
+Open AR =
+VAR _SelectedCustomers = VALUES ( Dim_Customer[CustomerID] )
+RETURN
+    CALCULATE (
+        SUM ( Fact_AR_Invoices[InvoiceAmount] ),
+        Fact_AR_Invoices[Status] = "Open",
+        -- السحر هنا: هذا السطر يجبر الـ Power BI على ربط جدول العملاء بجدول الفواتير برمجياً فوراً
+        TREATAS ( _SelectedCustomers, Fact_AR_Invoices[CustomerID] )
+    )
+
+Open Invoices Count =
+VAR _SelectedCustomers = VALUES ( Dim_Customer[CustomerID] )
+RETURN
+    CALCULATE (
+        COUNTROWS ( Fact_AR_Invoices ),
+        TREATAS ( _SelectedCustomers, Fact_AR_Invoices[CustomerID] )
+    )
