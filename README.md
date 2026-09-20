@@ -70,11 +70,11 @@ Receivables bucketed into 0-30 / 31-60 / 61-90 / 91+ day aging tiers, with geogr
 
 ## 🧬 Under the Hood — The Actual DAX
 
-📄 **Full measure library (47 measures, organized by category):** [dax-measures/key-measures.md](dax-measures/key-measures.md)
+📄 **Full measure library (47 measures, organized by category):** [Financial_key-measures.md](Financial_key-measures.md)
 
 A few signature ones below.
 
-These are the real, unedited measures from the `.pbix` file — not illustrative pseudocode.
+These are the real, unedited measures exported directly from the project's Power BI data model — not illustrative pseudocode.
 
 **Contextual sign inversion** (fixes revenue/expense sign conflicts dynamically):
 ```dax
