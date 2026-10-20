@@ -21,8 +21,8 @@ RETURN
         TRUE (),
         ISBLANK ( [Total Budget] ) && ISBLANK ( [Total Actual] ), BLANK(),
         ISBLANK ( [Total Budget] ), "No Budget",
-        v < -0.05, "Over Budget (Bad)",   -- المصروفات الزائدة أو نقص الإيرادات سيعطي سالب
-        v > 0.05, "Under Budget (Good)",  -- توفير المصروفات أو زيادة الإيرادات سيعطي موجب
+        v < -0.05, "Over Budget (Bad)",  
+        v > 0.05, "Under Budget (Good)",   
         "On Track"
     )
 ```
@@ -53,7 +53,6 @@ RETURN
         _CurrentStep,
         "Total Revenue", _Rev,
         "Total COGS",    _COGS * -1,
-        -- السحر هنا: نجعل مجمل الربح يظهر كصفر تجميعي مؤقت ليعتدل الشلال برمجياً
         "Gross Profit",  0, 
         "Total OpEx",    _OpEx * -1,
         "EBITDA",        0,
@@ -84,7 +83,7 @@ COUNTROWS (
 VAR _SelectedAccounts = VALUES ( Dim_Account[AccountID] )
 VAR _ActVal = 
     CALCULATE (
-        ABS ( [Actual] ), -- نأخذ القيمة الموجبة المجردة للمقارنة
+        ABS ( [Actual] ), 
         TREATAS ( _SelectedAccounts, Fact_GL_Actual[AccountID] )
     )
 VAR _BudVal = 
@@ -96,7 +95,6 @@ RETURN
     IF (
         ISBLANK ( _BudVal ) || _BudVal = 0,
         BLANK (),
-        -- إذا كان الصرف الفعلي أكبر من الموازنة فهذا انحراف موجب (تخطي)
         DIVIDE ( _ActVal - _BudVal, _BudVal, 0 )
     )
 ```
@@ -107,14 +105,12 @@ RETURN
 VAR _LatePaidCount = 
     CALCULATE (
         COUNT(Fact_GL_Actual[Amount]),
-        -- نفترض وجود عمود في داتا الفواتير يحدد حالة السداد المتأخر أو أيام التأخير
-        -- يمكنك تعديل الشرط بالأسفل ليطابق اسم العمود بجدولك (مثال: DaysOverdue > 0)
         Fact_GL_Actual[AccountID] = 7 
     )
 VAR _TotalPaidCount = 
     CALCULATE (
         COUNT(Fact_GL_Actual[Amount]),
-        Fact_GL_Actual[AccountID] IN { 7, 8 } -- إجمالي فواتير العملاء
+        Fact_GL_Actual[AccountID] IN { 7, 8 } 
     )
 RETURN
     IF (
@@ -132,7 +128,6 @@ RETURN
     CALCULATE (
         SUM ( Fact_AR_Invoices[InvoiceAmount] ),
         Fact_AR_Invoices[Status] = "Open",
-        -- السحر هنا: هذا السطر يجبر الـ Power BI على ربط جدول العملاء بجدول الفواتير برمجياً فوراً
         TREATAS ( _SelectedCustomers, Fact_AR_Invoices[CustomerID] )
     )
 ```
@@ -157,7 +152,6 @@ VAR _Rev = [Total Revenue]
 VAR _COGS = CALCULATE ( ABS ( SUM ( Fact_GL_Actual[Amount] ) ), Fact_GL_Actual[AccountID] IN { 2, 3 } )
 VAR _OpEx = CALCULATE ( ABS ( SUM ( Fact_GL_Actual[Amount] ) ), Fact_GL_Actual[AccountID] IN { 4, 5, 12 } )
 RETURN
-    -- هنا نقوم بطرح التكاليف والمصاريف ليعطي صافي الأرباح التشغيلية الفعلي والأقل من الإيرادات
     _Rev - _COGS - _OpEx
 ```
 
@@ -226,7 +220,6 @@ CALCULATE (
 CALCULATE (
     ABS ( SUM ( Fact_GL_Actual[Amount] ) ),
     Dim_Account[AccountCategory] IN { "Finance", "General & Administrative", "Personnel", "Research & Development", "Sales & Marketing" },
-    -- السحر هنا: هذا السطر يجبر الجداول على الارتتباط برمجياً بالـ AccountID فوراً
     TREATAS ( VALUES ( Dim_Account[AccountID] ), Fact_GL_Actual[AccountID] )
 )
 ```
@@ -255,7 +248,6 @@ SUM ( Fact_Budget[BudgetAmount] )
 ```dax
 VAR _Actual = [Total Actual]
 VAR _Budget = [Total Budget]
--- فحص إذا كان الحساب الحالي حساب مصروفات (مثلاً يبدأ بـ 4 أو 5)
 VAR _IsExpense = 
     LEFT ( SELECTEDVALUE ( Fact_GL_Actual[AccountID] ), 1 ) IN { "4", "5" }
 
@@ -289,7 +281,6 @@ VAR _CurrentLineItem = SELECTEDVALUE ( Fact_CashFlow[LineItem] )
 VAR _CurrentCategory = SELECTEDVALUE ( Fact_CashFlow[CashFlowCategory] )
 RETURN
     IF (
-        -- أولاً: إذا كان العنصر المعروض في المرئيات هو فئة كبرى (لإصلاح الشارتات على اليسار)
         ISINSCOPE ( Fact_CashFlow[CashFlowCategory] ) && ISBLANK ( _CurrentLineItem ),
         SWITCH (
             _CurrentCategory,
@@ -298,7 +289,6 @@ RETURN
             "Financing Activities", CALCULATE ( SUM ( Fact_GL_Actual[Amount] ), Fact_GL_Actual[AccountID] IN { 13, 14 } ),
             SUM ( Fact_GL_Actual[Amount] )
         ),
-        -- ثانياً: إذا كان العنصر المعروض هو بند تفصيلي (للحفاظ على انضباط الجدول بالأسفل)
         SWITCH (
             _CurrentLineItem,
             "Cash from Customer Collections", CALCULATE ( ABS ( SUM ( Fact_GL_Actual[Amount] ) ), Fact_GL_Actual[AccountID] IN { 1, 10 } ),
@@ -371,7 +361,6 @@ VAR _MonthlyBurnRate =
 RETURN
     IF (
         _MonthlyBurnRate = 0 || _CurrentCash <= 0,
-        0, -- إذا كان الكاش سالباً أو الصرف صفراً يعود بصفر
         DIVIDE ( _CurrentCash, _MonthlyBurnRate, 0 )
     )
 ```
@@ -412,11 +401,9 @@ VAR _DSOValue =
             FILTER ( Fact_AR_Invoices, Fact_AR_Invoices[Status] = "Paid" ),
             DATEDIFF ( Fact_AR_Invoices[InvoiceDate], Fact_AR_Invoices[PaidDate], DAY )
         ),
-        -- إجبار البرنامج على ربط الفواتير المسددة بشرائح العملاء برمجياً فوراً
         TREATAS ( _SelectedCustomers, Fact_AR_Invoices[CustomerID] )
     )
 RETURN
-    -- شرط ذكي: إذا كانت الشريحة فارغة أو القيمة صفراً يخفي العمود تماماً من الشارت
     IF ( ISBLANK ( _DSOValue ) || _DSOValue = 0, BLANK (), _DSOValue )
 ```
 
