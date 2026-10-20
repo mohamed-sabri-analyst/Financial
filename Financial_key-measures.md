@@ -210,7 +210,7 @@ CALCULATE ( SUM ( Fact_GL_Actual[Amount] ), Dim_Account[AccountType] = "Other" )
 ```dax
 CALCULATE (
     ABS ( SUM ( Fact_GL_Actual[Amount] ) ),
-    Fact_GL_Actual[AccountID] IN { 2, 3 } -- حسابات التكاليف المباشرة
+    Fact_GL_Actual[AccountID] IN { 2, 3 }  
 )
 ```
 
@@ -254,8 +254,8 @@ VAR _IsExpense =
 RETURN
     IF (
         _IsExpense,
-        _Budget - _Actual,  -- للمصروفات: إذا كان الميزاني أكبر من الفعلي فهو إيجابي
-        _Actual - _Budget   -- للإيرادات: إذا كان الفعلي أكبر من الميزاني فهو إيجابي
+        _Budget - _Actual,   
+        _Actual - _Budget   
     )
 ```
 
